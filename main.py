@@ -183,31 +183,25 @@ def earn_demo(user=Depends(current_user)):
     # TEST ONLY: simulates a $1 MXN reward.
     amount = Decimal("1.00")
     with db() as c:
-    c.execute(
+        c.execute(
         """INSERT INTO balances(user_id, amount)
            VALUES(%s, 0)
            ON CONFLICT (user_id) DO NOTHING""",
         (user["id"],)
     )
 
-    c.execute(
+        c.execute(
         """UPDATE balances
            SET amount=amount+%s, updated_at=now()
            WHERE user_id=%s""",
         (amount, user["id"])
     )
 
-    c.execute(
+        c.execute(
         """INSERT INTO transactions(user_id,type,amount,description)
            VALUES(%s,'earning',%s,'Recompensa de prueba')""",
         (user["id"], amount)
     )
-    c.commit()
-        c.execute(
-            """INSERT INTO transactions(user_id,type,amount,description)
-               VALUES(%s,'earning',%s,'Recompensa de prueba')""",
-            (user["id"], amount)
-        )
         c.commit()
     return {"ok":True, "added":amount}
 
