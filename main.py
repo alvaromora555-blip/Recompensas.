@@ -203,7 +203,6 @@ def earn_demo(user=Depends(current_user)):
         (user["id"], amount)
     )
     c.commit()
-        )
         c.execute(
             """INSERT INTO transactions(user_id,type,amount,description)
                VALUES(%s,'earning',%s,'Recompensa de prueba')""",
