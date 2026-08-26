@@ -10,6 +10,12 @@ from psycopg.rows import dict_row
 
 DATABASE_URL = os.environ["DATABASE_URL"]
 JWT_SECRET = os.environ["JWT_SECRET"]
+from urllib.parse import urlparse
+
+_db_info = urlparse(DATABASE_URL)
+print("DATABASE USER:", _db_info.username)
+print("DATABASE HOST:", _db_info.hostname)
+print("DATABASE PORT:", _db_info.port)
 
 app = FastAPI(title="Recompensa API", version="3.0.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=False,
