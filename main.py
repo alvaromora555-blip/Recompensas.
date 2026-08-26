@@ -10,6 +10,7 @@ from psycopg.rows import dict_row
 
 DATABASE_URL = os.environ["DATABASE_URL"]
 JWT_SECRET = os.environ["JWT_SECRET"]
+
 from urllib.parse import urlparse
 
 _db_info = urlparse(DATABASE_URL)
