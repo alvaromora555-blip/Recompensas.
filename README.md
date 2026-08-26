@@ -1,0 +1,2 @@
+# Recompensas.
+Aplicacion de recompensas
