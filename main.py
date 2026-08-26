@@ -20,6 +20,7 @@ print("DATABASE HOST:", _db_info.hostname)
 print("DATABASE PORT:", _db_info.port)
 
 app = FastAPI(title="Recompensa API", version="3.0.0")
+security = HTTPBearer()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=False,
                    allow_methods=["*"], allow_headers=["*"])
 
@@ -46,20 +47,29 @@ def token_for(user_id):
                "exp": now + timedelta(days=30)}
     return jwt.encode(payload, JWT_SECRET, algorithm="HS256")
 
-def current_user(authorization: str = Header(default="")):
-    if not authorization.startswith("Bearer "):
-        raise HTTPException(401, "Falta el token Bearer")
+def current_user(
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    token = credentials.credentials
+
     try:
-        uid = int(jwt.decode(authorization[7:], JWT_SECRET,
-                             algorithms=["HS256"])["sub"])
+        uid = int(jwt.decode(
+            token,
+            JWT_SECRET,
+            algorithms=["HS256"]
+        )["sub"])
     except Exception:
         raise HTTPException(401, "Token inválido o expirado")
+
     with db() as conn:
         user = conn.execute(
-            "SELECT id,email,name,created_at FROM users WHERE id=%s", (uid,)
+            "SELECT id,email,name,created_at FROM users WHERE id=%s",
+            (uid,)
         ).fetchone()
+
     if not user:
         raise HTTPException(401, "Usuario no encontrado")
+
     return user
 
 class RegisterIn(BaseModel):
