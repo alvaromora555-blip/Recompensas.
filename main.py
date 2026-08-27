@@ -94,7 +94,10 @@ def startup():
           password_hash TEXT NOT NULL,
           created_at TIMESTAMPTZ NOT NULL DEFAULT now()
         )""")
-
+        c.execute("""
+            ALTER TABLE users
+            ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT FALSE
+        """)
         c.execute("""CREATE TABLE IF NOT EXISTS balances (
           user_id BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
           amount NUMERIC(12,2) NOT NULL DEFAULT 0,
