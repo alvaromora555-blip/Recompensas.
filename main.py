@@ -105,14 +105,56 @@ def startup():
           status TEXT NOT NULL DEFAULT 'completed',
           description TEXT,
           created_at TIMESTAMPTZ NOT NULL DEFAULT now())""")
+                c.execute("""
+            CREATE TABLE IF NOT EXISTS task_claims (
+                id BIGSERIAL PRIMARY KEY,
+                user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                task_id TEXT NOT NULL,
+                amount NUMERIC(12,2) NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                UNIQUE(user_id, task_id)
+            )
+        """)
+
         c.execute("""
-        CREATE TABLE IF NOT EXISTS task_claims (
-            id BIGSERIAL PRIMARY KEY,
-            user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-            task_id TEXT NOT NULL,
-            amount NUMERIC(12,2) NOT NULL,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-            UNIQUE(user_id, task_id))""")
+            CREATE TABLE IF NOT EXISTS tasks (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                description TEXT NOT NULL,
+                amount NUMERIC(12,2) NOT NULL CHECK(amount > 0),
+                active BOOLEAN NOT NULL DEFAULT TRUE,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            )
+        """)
+
+        c.execute("""
+            INSERT INTO tasks (id, title, description, amount)
+            VALUES
+                ('welcome', 'Recompensa de bienvenida',
+                 'Completa tu primera actividad.', 1.00),
+                ('daily', 'Recompensa diaria',
+                 'Realiza la actividad diaria.', 0.50)
+            ON CONFLICT (id) DO NOTHING
+        """)
+        c.commit()
+            CREATE TABLE IF NOT EXISTS tasks (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                description TEXT NOT NULL,
+                amount NUMERIC(12,2) NOT NULL CHECK(amount > 0),
+                active BOOLEAN NOT NULL DEFAULT TRUE,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            )
+        """)
+        c.execute("""
+            INSERT INTO tasks (id, title, description, amount)
+            VALUES
+                ('welcome', 'Recompensa de bienvenida',
+                 'Completa tu primera actividad.', 1.00),
+                ('daily', 'Recompensa diaria',
+                 'Realiza la actividad diaria.', 0.50)
+            ON CONFLICT (id) DO NOTHING
+        """)
         c.commit()
 
 @app.get("/")
@@ -187,56 +229,61 @@ def transactions(user=Depends(current_user)):
     return {"transactions":rows}
 @app.get("/tasks")
 def tasks(user=Depends(current_user)):
-    return {
-        "tasks": [
-            {
-                "id": "welcome",
-                "title": "Recompensa de bienvenida",
-                "description": "Completa tu primera actividad.",
-                "amount": 1.00
-            },
-            {
-                "id": "daily",
-                "title": "Recompensa diaria",
-                "description": "Realiza la actividad diaria.",
-                "amount": 0.50
-            }
-        ]
-    }
-
-
-@app.post("/tasks/{task_id}/claim")
-def claim_task(task_id: str, user=Depends(current_user)):
-    tasks = {
-        "welcome": {
-            "amount": Decimal("1.00"),
-            "description": "Recompensa de bienvenida"
-        },
-        "daily": {
-            "amount": Decimal("0.50"),
-            "description": "Recompensa diaria"
-        }
-    }
-
-    if task_id not in tasks:
-        raise HTTPException(404, "Tarea no encontrada")
-
-    task = tasks[task_id]
-
     with db() as c:
+        rows = c.execute(
+            """
+            SELECT
+                t.id,
+                t.title,
+                t.description,
+                t.amount,
+                CASE
+                    WHEN tc.task_id IS NOT NULL THEN true
+                    ELSE false
+                END AS claimed
+            FROM tasks t
+            LEFT JOIN task_claims tc
+                ON tc.task_id = t.id
+                AND tc.user_id = %s
+            WHERE t.active = true
+            ORDER BY t.id
+            """,
+            (user["id"],)
+        ).fetchall()
+
+    return {"tasks": rows}
+
+
+@app.post("/tasks/{task_id}/complete")
+def complete_task(task_id: str, user=Depends(current_user)):
+    with db() as c:
+        task = c.execute(
+            """
+            SELECT id, title, description, amount
+            FROM tasks
+            WHERE id = %s AND active = true
+            """,
+            (task_id,)
+        ).fetchone()
+
+        if not task:
+            raise HTTPException(404, "Tarea no encontrada")
+
         try:
+            # Una tarea solo puede pagarse una vez por usuario.
             c.execute(
                 """
                 INSERT INTO task_claims(user_id, task_id, amount)
                 VALUES(%s, %s, %s)
                 """,
-                (user["id"], task_id, task["amount"])
+                (user["id"], task["id"], task["amount"])
             )
 
             c.execute(
                 """
                 UPDATE balances
-                SET amount = amount + %s, updated_at = now()
+                SET amount = amount + %s,
+                    updated_at = now()
                 WHERE user_id = %s
                 """,
                 (task["amount"], user["id"])
@@ -245,7 +292,11 @@ def claim_task(task_id: str, user=Depends(current_user)):
             c.execute(
                 """
                 INSERT INTO transactions(
-                    user_id, type, amount, status, description
+                    user_id,
+                    type,
+                    amount,
+                    status,
+                    description
                 )
                 VALUES(%s, 'earning', %s, 'completed', %s)
                 """,
@@ -262,40 +313,14 @@ def claim_task(task_id: str, user=Depends(current_user)):
             c.rollback()
             raise HTTPException(
                 409,
-                "Esta recompensa ya fue reclamada"
+                "Esta tarea ya fue completada"
             )
 
     return {
         "ok": True,
-        "task_id": task_id,
+        "task_id": task["id"],
         "added": task["amount"]
     }
-@app.post("/earn/demo")
-def earn_demo(user=Depends(current_user)):
-    # TEST ONLY: simulates a $1 MXN reward.
-    amount = Decimal("1.00")
-    with db() as c:
-        c.execute(
-        """INSERT INTO balances(user_id, amount)
-           VALUES(%s, 0)
-           ON CONFLICT (user_id) DO NOTHING""",
-        (user["id"],)
-    )
-
-        c.execute(
-        """UPDATE balances
-           SET amount=amount+%s, updated_at=now()
-           WHERE user_id=%s""",
-        (amount, user["id"])
-    )
-
-        c.execute(
-        """INSERT INTO transactions(user_id,type,amount,description)
-           VALUES(%s,'earning',%s,'Recompensa de prueba')""",
-        (user["id"], amount)
-    )
-        c.commit()
-    return {"ok":True, "added":amount}
 
 @app.post("/withdraw")
 def withdraw(data: WithdrawIn, user=Depends(current_user)):
