@@ -121,6 +121,7 @@ def startup():
           amount NUMERIC(12,2) NOT NULL,
           created_at TIMESTAMPTZ NOT NULL DEFAULT now()
         )""")
+        c.execute("ALTER TABLE task_claims DROP CONSTRAINT IF EXISTS task_claims_user_id_task_id_key")
         c.execute("""CREATE UNIQUE INDEX IF NOT EXISTS uq_task_claim_once
           ON task_claims(user_id, task_id)
           WHERE task_id <> 'daily'
@@ -257,388 +258,17 @@ def tasks(user=Depends(current_user)):
         ).fetchall()
     return {"tasks": rows}
 
-
 @app.post("/tasks/{task_id}/complete")
 def complete_task(task_id: str, user=Depends(current_user)):
-    with db() as c:
-        try:
-            task = c.execute(
-                """
-                SELECT id, title, description, amount
-                FROM tasks
-                WHERE id = %s AND active = true
-                FOR UPDATE
-                """,
-                (task_id,)
-            ).fetchone()
-
-            if not task:
-                raise HTTPException(404, "Tarea no encontrada")
-
-            if task_id == "daily":
-                claimed = c.execute(
-                    """
-                    SELECT 1 FROM task_claims
-                    WHERE user_id = %s AND task_id = 'daily'
-                      AND created_at >= date_trunc('day', now())
-                    LIMIT 1
-                    """,
-                    (user["id"],)
-                ).fetchone()
-            else:
-                claimed = c.execute(
-                    """
-                    SELECT 1 FROM task_claims
-                    WHERE user_id = %s AND task_id = %s
-                    LIMIT 1
-                    """,
-                    (user["id"], task_id)
-                ).fetchone()
-
-            if claimed:
-                raise HTTPException(
-                    409, "Esta tarea ya fue completada en el periodo permitido"
-                )
-
-            c.execute(
-                """
-                INSERT INTO task_claims(user_id, task_id, amount)
-                VALUES(%s, %s, %s)
-                """,
-                (user["id"], task["id"], task["amount"])
-            )
-
-            updated = c.execute(
-                """
-                UPDATE balances
-                SET amount = amount + %s, updated_at = now()
-                WHERE user_id = %s
-                RETURNING amount
-                """,
-                (task["amount"], user["id"])
-            ).fetchone()
-
-            if not updated:
-                raise HTTPException(500, "Balance no encontrado")
-
-            c.execute(
-                """
-                INSERT INTO transactions(
-                    user_id, type, amount, status, description
-                )
-                VALUES(%s, 'earning', %s, 'completed', %s)
-                """,
-                (user["id"], task["amount"], task["description"])
-            )
-            c.commit()
-
-        except HTTPException:
-            c.rollback()
-            raise
-        except psycopg.errors.UniqueViolation:
-            c.rollback()
-            raise HTTPException(
-                409, "Esta tarea ya fue completada en el periodo permitido"
-            )
-
-    return {"ok": True, "task_id": task["id"], "added": task["amount"]}
-
-
-@app.post("/withdraw")
-def withdraw(data: WithdrawIn, user=Depends(current_user)):
-    amount = data.amount.quantize(Decimal("0.01"))
     with db() as c:
         c.execute("SELECT pg_advisory_xact_lock(%s)", (user["id"],))
-        row = c.execute(
-            "SELECT amount FROM balances WHERE user_id=%s FOR UPDATE",
-            (user["id"],)
-        ).fetchone()
-        if not row or row["amount"] < amount:
-            raise HTTPException(400, "Saldo insuficiente")
-        c.execute(
-            "UPDATE balances SET amount=amount-%s,updated_at=now() WHERE user_id=%s",
-            (amount, user["id"])
-        )
-        c.execute(
-            """INSERT INTO transactions(user_id,type,amount,status,description)
-               VALUES(%s,'withdrawal',%s,'pending','Solicitud de retiro')""",
-            (user["id"], amount)
-        )
-        c.commit()
-    return {"ok":True, "status":"pending", "amount":amount}
-  
-def require_admin(user=Depends(current_user)):
-    with db() as c:
-        admin = c.execute(
-            "SELECT is_admin FROM users WHERE id=%s",
-            (user["id"],)
-        ).fetchone()
 
-    if not admin or not admin["is_admin"]:
-        raise HTTPException(403, "Acceso solo para administradores")
-
-    return user
-
-@app.get("/admin/withdrawals")
-def admin_withdrawals(user=Depends(require_admin)):
-    with db() as c:
-        rows = c.execute("""
-            SELECT
-                t.id,
-                t.user_id,
-                u.email,
-                u.name,
-                t.amount,
-                t.status,
-                t.description,
-                t.created_at
-            FROM transactions t
-            JOIN users u ON u.id = t.user_id
-            WHERE t.type = 'withdrawal'
-              AND t.status = 'pending'
-            ORDER BY t.created_at ASC
-        """).fetchall()
-
-    return {"withdrawals": rows}
-
-
-@app.post("/admin/withdrawals/{transaction_id}/approve")
-def approve_withdrawal(
-    transaction_id: int,
-    user=Depends(require_admin)
-):
-    with db() as c:
-        withdrawal = c.execute("""
-            SELECT id, user_id, amount, status
-            FROM transactions
-            WHERE id = %s
-              AND type = 'withdrawal'
-            FOR UPDATE
-        """, (transaction_id,)).fetchone()
-
-        if not withdrawal:
-            raise HTTPException(404, "Retiro no encontrado")
-
-        if withdrawal["status"] != "pending":
-            raise HTTPException(400, "El retiro ya fue procesado")
-
-        c.execute("""
-            UPDATE transactions
-            SET status = 'completed',
-                description = 'Retiro aprobado por administrador'
-            WHERE id = %s
-        """, (transaction_id,))
-
-        c.commit()
-
-    return {
-        "ok": True,
-        "message": "Retiro aprobado",
-        "transaction_id": transaction_id
-    }
-
-
-@app.post("/admin/withdrawals/{transaction_id}/reject")
-def reject_withdrawal(
-    transaction_id: int,
-    user=Depends(require_admin)
-):
-    with db() as c:
-        withdrawal = c.execute("""
-            SELECT id, user_id, amount, status
-            FROM transactions
-            WHERE id = %s
-              AND type = 'withdrawal'
-            FOR UPDATE
-        """, (transaction_id,)).fetchone()
-
-        if not withdrawal:
-            raise HTTPException(404, "Retiro no encontrado")
-
-        if withdrawal["status"] != "pending":
-            raise HTTPException(400, "El retiro ya fue procesado")
-
-        c.execute("""
-            UPDATE balances
-            SET amount = amount + %s,
-                updated_at = now()
-            WHERE user_id = %s
-        """, (
-            withdrawal["amount"],
-            withdrawal["user_id"]
-        ))
-
-        c.execute("""
-            UPDATE transactions
-            SET status = 'rejected',
-                description = 'Retiro rechazado por administrador'
-            WHERE id = %s
-        """, (transaction_id,))
-
-        c.commit()
-
-    return {
-        "ok": True,
-        "message": "Retiro rechazado y saldo devuelto",
-        "transaction_id": transaction_id
-    }
-
-        c.execute("""CREATE TABLE IF NOT EXISTS transactions (
-          id BIGSERIAL PRIMARY KEY,
-          user_id BIGINT REFERENCES users(id) ON DELETE CASCADE NOT NULL,
-          type TEXT NOT NULL CHECK(type IN ('earning','withdrawal')),
-          amount NUMERIC(12,2) NOT NULL CHECK(amount > 0),
-          status TEXT NOT NULL DEFAULT 'completed',
-          description TEXT,
-          created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-        )""")
-
-        c.execute("""CREATE TABLE IF NOT EXISTS task_claims (
-          id BIGSERIAL PRIMARY KEY,
-          user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-          task_id TEXT NOT NULL,
-          amount NUMERIC(12,2) NOT NULL,
-          created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-          UNIQUE(user_id, task_id)
-        )""")
-
-        c.execute("""CREATE TABLE IF NOT EXISTS tasks (
-          id TEXT PRIMARY KEY,
-          title TEXT NOT NULL,
-          description TEXT NOT NULL,
-          amount NUMERIC(12,2) NOT NULL CHECK(amount > 0),
-          active BOOLEAN NOT NULL DEFAULT TRUE,
-          created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-        )""")
-
-        c.execute("""INSERT INTO tasks
-          (id, title, description, amount)
-          VALUES
-            ('welcome', 'Recompensa de bienvenida',
-             'Completa tu primera actividad.', 1.00),
-            ('daily', 'Recompensa diaria',
-             'Realiza la actividad diaria.', 0.50)
-          ON CONFLICT (id) DO NOTHING
-        """)
-      
-admin_email = os.getenv("ADMIN_EMAIL")
-
-if admin_email:
-    with db() as c:
-        c.execute(
-            """
-            UPDATE users
-            SET is_admin = TRUE
-            WHERE email = %s
-            """,
-            (admin_email.strip().lower(),)
-        )
-        c.commit()
-
-@app.get("/")
-def home():
-    return {"app":"Recompensa","status":"online","version":"3.0.0"}
-
-@app.get("/health")
-def health():
-    try:
-        with db() as c:
-            c.execute("SELECT 1")
-        return {"ok":True,"database":"connected","version":"3.0.0"}
-    except Exception as e:
-        return {"ok":False,"database":"error","detail":str(e)}
-
-@app.post("/auth/register")
-def register(data: RegisterIn):
-    email = data.email.strip().lower()
-    if "@" not in email:
-        raise HTTPException(400, "Correo inválido")
-    with db() as c:
-        try:
-            user = c.execute(
-                """INSERT INTO users(email,name,password_hash)
-                   VALUES(%s,%s,%s)
-                   RETURNING id,email,name,created_at""",
-                (email, data.name.strip(), hash_password(data.password))
-            ).fetchone()
-            c.execute("INSERT INTO balances(user_id,amount) VALUES(%s,0)",
-                      (user["id"],))
-            c.commit()
-        except psycopg.errors.UniqueViolation:
-            c.rollback()
-            raise HTTPException(409, "Ese correo ya está registrado")
-    return {"user":user, "token":token_for(user["id"])}
-
-@app.post("/auth/login")
-def login(data: LoginIn):
-    with db() as c:
-        user = c.execute(
-            "SELECT id,email,name,password_hash,created_at FROM users WHERE email=%s",
-            (data.email.strip().lower(),)
-        ).fetchone()
-    if not user or not verify_password(data.password, user["password_hash"]):
-        raise HTTPException(401, "Correo o contraseña incorrectos")
-    user.pop("password_hash", None)
-    return {"user":user, "token":token_for(user["id"])}
-
-@app.get("/me")
-def me(user=Depends(current_user)):
-    return {"user":user}
-
-@app.get("/balance")
-def balance(user=Depends(current_user)):
-    with db() as c:
-        row = c.execute(
-            "SELECT amount,updated_at FROM balances WHERE user_id=%s",
-            (user["id"],)
-        ).fetchone()
-    return {"balance":row["amount"], "updated_at":row["updated_at"]}
-
-@app.get("/transactions")
-def transactions(user=Depends(current_user)):
-    with db() as c:
-        rows = c.execute(
-            """SELECT id,type,amount,status,description,created_at
-               FROM transactions
-               WHERE user_id=%s
-               ORDER BY id DESC LIMIT 100""",
-            (user["id"],)
-        ).fetchall()
-    return {"transactions":rows}
-@app.get("/tasks")
-def tasks(user=Depends(current_user)):
-    with db() as c:
-        rows = c.execute(
-            """
-            SELECT
-                t.id,
-                t.title,
-                t.description,
-                t.amount,
-                CASE
-                    WHEN tc.task_id IS NOT NULL THEN true
-                    ELSE false
-                END AS claimed
-            FROM tasks t
-            LEFT JOIN task_claims tc
-                ON tc.task_id = t.id
-                AND tc.user_id = %s
-            WHERE t.active = true
-            ORDER BY t.id
-            """,
-            (user["id"],)
-        ).fetchall()
-
-    return {"tasks": rows}
-
-@app.post("/tasks/{task_id}/complete")
-def complete_task(task_id: str, user=Depends(current_user)):
-    with db() as c:
         task = c.execute(
             """
             SELECT id, title, description, amount
             FROM tasks
             WHERE id = %s AND active = true
+            FOR UPDATE
             """,
             (task_id,)
         ).fetchone()
@@ -646,8 +276,30 @@ def complete_task(task_id: str, user=Depends(current_user)):
         if not task:
             raise HTTPException(404, "Tarea no encontrada")
 
+        if task_id == "daily":
+            claimed = c.execute(
+                """
+                SELECT 1 FROM task_claims
+                WHERE user_id = %s AND task_id = 'daily'
+                  AND created_at >= date_trunc('day', now())
+                LIMIT 1
+                """,
+                (user["id"],)
+            ).fetchone()
+        else:
+            claimed = c.execute(
+                """
+                SELECT 1 FROM task_claims
+                WHERE user_id = %s AND task_id = %s
+                LIMIT 1
+                """,
+                (user["id"], task_id)
+            ).fetchone()
+
+        if claimed:
+            raise HTTPException(409, "Esta tarea ya fue completada en el periodo permitido")
+
         try:
-            # Una tarea solo puede pagarse una vez por usuario.
             c.execute(
                 """
                 INSERT INTO task_claims(user_id, task_id, amount)
@@ -659,8 +311,7 @@ def complete_task(task_id: str, user=Depends(current_user)):
             c.execute(
                 """
                 UPDATE balances
-                SET amount = amount + %s,
-                    updated_at = now()
+                SET amount = amount + %s, updated_at = now()
                 WHERE user_id = %s
                 """,
                 (task["amount"], user["id"])
@@ -668,36 +319,17 @@ def complete_task(task_id: str, user=Depends(current_user)):
 
             c.execute(
                 """
-                INSERT INTO transactions(
-                    user_id,
-                    type,
-                    amount,
-                    status,
-                    description
-                )
+                INSERT INTO transactions(user_id, type, amount, status, description)
                 VALUES(%s, 'earning', %s, 'completed', %s)
                 """,
-                (
-                    user["id"],
-                    task["amount"],
-                    task["description"]
-                )
+                (user["id"], task["amount"], task["description"])
             )
-
             c.commit()
-
-        except psycopg2.errors.UniqueViolation:
+        except psycopg.errors.UniqueViolation:
             c.rollback()
-            raise HTTPException(
-                409,
-                "Esta tarea ya fue completada"
-            )
+            raise HTTPException(409, "Esta tarea ya fue completada en el periodo permitido")
 
-    return {
-        "ok": True,
-        "task_id": task["id"],
-        "added": task["amount"]
-    }
+    return {"ok": True, "task_id": task["id"], "added": task["amount"]}
 
 @app.post("/withdraw")
 def withdraw(data: WithdrawIn, user=Depends(current_user)):
