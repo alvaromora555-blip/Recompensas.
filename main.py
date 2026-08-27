@@ -137,7 +137,6 @@ def startup():
              'Realiza la actividad diaria.', 0.50)
           ON CONFLICT (id) DO NOTHING
         """)
-
         c.commit()
 
 @app.get("/")
