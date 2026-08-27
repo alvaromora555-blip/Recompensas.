@@ -142,9 +142,8 @@ def startup():
           ON CONFLICT (id) DO NOTHING
         """)
       
-      admin_email = os.getenv("ADMIN_EMAIL")
-
-        if admin_email:
+admin_email = os.getenv("ADMIN_EMAIL")
+    if admin_email:
             c.execute(
                 """
                 UPDATE users
