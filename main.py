@@ -143,7 +143,7 @@ def startup():
         """)
       
 admin_email = os.getenv("ADMIN_EMAIL")
-    if admin_email:
+if admin_email:
             c.execute(
                 """
                 UPDATE users
