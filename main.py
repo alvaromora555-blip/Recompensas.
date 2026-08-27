@@ -239,7 +239,6 @@ def tasks(user=Depends(current_user)):
 
     return {"tasks": rows}
 
-
 @app.post("/tasks/{task_id}/complete")
 def complete_task(task_id: str, user=Depends(current_user)):
     with db() as c:
@@ -343,10 +342,8 @@ def withdraw(data: WithdrawIn, user=Depends(current_user)):
 
     return user
 
-
 @app.get("/admin/withdrawals")
-def 
-admin_withdrawals(user=Depends(require_admin)):
+def admin_withdrawals(user=Depends(require_admin)):
     with db() as c:
         rows = c.execute("""
             SELECT
@@ -365,7 +362,6 @@ admin_withdrawals(user=Depends(require_admin)):
         """).fetchall()
 
     return {"withdrawals": rows}
-
 
 @app.post("/admin/withdrawals/{transaction_id}/approve")
 def approve_withdrawal(
@@ -404,7 +400,6 @@ def approve_withdrawal(
         "status": "completed",
         "transaction_id": transaction_id
     }
-
 
 @app.post("/admin/withdrawals/{transaction_id}/reject")
 def reject_withdrawal(
