@@ -141,7 +141,8 @@ def startup():
              'Realiza la actividad diaria.', 0.50)
           ON CONFLICT (id) DO NOTHING
         """)
-              admin_email = os.getenv("ADMIN_EMAIL")
+      
+      admin_email = os.getenv("ADMIN_EMAIL")
 
         if admin_email:
             c.execute(
