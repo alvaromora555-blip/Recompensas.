@@ -105,6 +105,14 @@ def startup():
           status TEXT NOT NULL DEFAULT 'completed',
           description TEXT,
           created_at TIMESTAMPTZ NOT NULL DEFAULT now())""")
+        c.execute("""
+        CREATE TABLE IF NOT EXISTS task_claims (
+            id BIGSERIAL PRIMARY KEY,
+            user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            task_id TEXT NOT NULL,
+            amount NUMERIC(12,2) NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            UNIQUE(user_id, task_id))""")
         c.commit()
 
 @app.get("/")
