@@ -330,3 +330,125 @@ def withdraw(data: WithdrawIn, user=Depends(current_user)):
         )
         c.commit()
     return {"ok":True, "status":"pending", "amount":amount}
+  
+  def require_admin(user=Depends(current_user)):
+    with db() as c:
+        admin = c.execute(
+            "SELECT is_admin FROM users WHERE id=%s",
+            (user["id"],)
+        ).fetchone()
+
+    if not admin or not admin["is_admin"]:
+        raise HTTPException(403, "Acceso solo para administradores")
+
+    return user
+
+
+@app.get("/admin/withdrawals")
+def admin_withdrawals(user=Depends(require_admin)):
+    with db() as c:
+        rows = c.execute("""
+            SELECT
+                t.id,
+                t.user_id,
+                u.email,
+                u.name,
+                t.amount,
+                t.status,
+                t.description,
+                t.created_at
+            FROM transactions t
+            JOIN users u ON u.id = t.user_id
+            WHERE t.type = 'withdrawal'
+            ORDER BY t.created_at DESC
+        """).fetchall()
+
+    return {"withdrawals": rows}
+
+
+@app.post("/admin/withdrawals/{transaction_id}/approve")
+def approve_withdrawal(
+    transaction_id: int,
+    user=Depends(require_admin)
+):
+    with db() as c:
+        row = c.execute("""
+            SELECT id, user_id, amount, status
+            FROM transactions
+            WHERE id=%s
+              AND type='withdrawal'
+            FOR UPDATE
+        """, (transaction_id,)).fetchone()
+
+        if not row:
+            raise HTTPException(404, "Retiro no encontrado")
+
+        if row["status"] != "pending":
+            raise HTTPException(
+                409,
+                "Este retiro ya fue procesado"
+            )
+
+        c.execute("""
+            UPDATE transactions
+            SET status='completed',
+                description='Retiro aprobado por administrador'
+            WHERE id=%s
+        """, (transaction_id,))
+
+        c.commit()
+
+    return {
+        "ok": True,
+        "status": "completed",
+        "transaction_id": transaction_id
+    }
+
+
+@app.post("/admin/withdrawals/{transaction_id}/reject")
+def reject_withdrawal(
+    transaction_id: int,
+    user=Depends(require_admin)
+):
+    with db() as c:
+        row = c.execute("""
+            SELECT id, user_id, amount, status
+            FROM transactions
+            WHERE id=%s
+              AND type='withdrawal'
+            FOR UPDATE
+        """, (transaction_id,)).fetchone()
+
+        if not row:
+            raise HTTPException(404, "Retiro no encontrado")
+
+        if row["status"] != "pending":
+            raise HTTPException(
+                409,
+                "Este retiro ya fue procesado"
+            )
+
+        # Devolver el dinero al usuario
+        c.execute("""
+            UPDATE balances
+            SET amount = amount + %s,
+                updated_at = now()
+            WHERE user_id=%s
+        """, (row["amount"], row["user_id"]))
+
+        # Marcar el retiro como rechazado
+        c.execute("""
+            UPDATE transactions
+            SET status='rejected',
+                description='Retiro rechazado por administrador'
+            WHERE id=%s
+        """, (transaction_id,))
+
+        c.commit()
+
+    return {
+        "ok": True,
+        "status": "rejected",
+        "refunded": row["amount"],
+        "transaction_id": transaction_id
+    }
