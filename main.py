@@ -358,10 +358,93 @@ def admin_withdrawals(user=Depends(require_admin)):
             FROM transactions t
             JOIN users u ON u.id = t.user_id
             WHERE t.type = 'withdrawal'
-            ORDER BY t.created_at DESC
+              AND t.status = 'pending'
+            ORDER BY t.created_at ASC
         """).fetchall()
 
     return {"withdrawals": rows}
+
+
+@app.post("/admin/withdrawals/{transaction_id}/approve")
+def approve_withdrawal(
+    transaction_id: int,
+    user=Depends(require_admin)
+):
+    with db() as c:
+        withdrawal = c.execute("""
+            SELECT id, user_id, amount, status
+            FROM transactions
+            WHERE id = %s
+              AND type = 'withdrawal'
+            FOR UPDATE
+        """, (transaction_id,)).fetchone()
+
+        if not withdrawal:
+            raise HTTPException(404, "Retiro no encontrado")
+
+        if withdrawal["status"] != "pending":
+            raise HTTPException(400, "El retiro ya fue procesado")
+
+        c.execute("""
+            UPDATE transactions
+            SET status = 'completed',
+                description = 'Retiro aprobado por administrador'
+            WHERE id = %s
+        """, (transaction_id,))
+
+        c.commit()
+
+    return {
+        "ok": True,
+        "message": "Retiro aprobado",
+        "transaction_id": transaction_id
+    }
+
+
+@app.post("/admin/withdrawals/{transaction_id}/reject")
+def reject_withdrawal(
+    transaction_id: int,
+    user=Depends(require_admin)
+):
+    with db() as c:
+        withdrawal = c.execute("""
+            SELECT id, user_id, amount, status
+            FROM transactions
+            WHERE id = %s
+              AND type = 'withdrawal'
+            FOR UPDATE
+        """, (transaction_id,)).fetchone()
+
+        if not withdrawal:
+            raise HTTPException(404, "Retiro no encontrado")
+
+        if withdrawal["status"] != "pending":
+            raise HTTPException(400, "El retiro ya fue procesado")
+
+        c.execute("""
+            UPDATE balances
+            SET amount = amount + %s,
+                updated_at = now()
+            WHERE user_id = %s
+        """, (
+            withdrawal["amount"],
+            withdrawal["user_id"]
+        ))
+
+        c.execute("""
+            UPDATE transactions
+            SET status = 'rejected',
+                description = 'Retiro rechazado por administrador'
+            WHERE id = %s
+        """, (transaction_id,))
+
+        c.commit()
+
+    return {
+        "ok": True,
+        "message": "Retiro rechazado y saldo devuelto",
+        "transaction_id": transaction_id
+    }
 
 @app.post("/admin/withdrawals/{transaction_id}/approve")
 def approve_withdrawal(
