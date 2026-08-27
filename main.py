@@ -83,7 +83,8 @@ class LoginIn(BaseModel):
 
 class WithdrawIn(BaseModel):
     amount: Decimal = Field(gt=0)
-  @app.on_event("startup")
+  
+@app.on_event("startup")
 def startup():
     with db() as c:
         c.execute("""CREATE TABLE IF NOT EXISTS users (
