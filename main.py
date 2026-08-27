@@ -83,8 +83,7 @@ class LoginIn(BaseModel):
 
 class WithdrawIn(BaseModel):
     amount: Decimal = Field(gt=0)
-
-@app.on_event("startup")
+  @app.on_event("startup")
 def startup():
     with db() as c:
         c.execute("""CREATE TABLE IF NOT EXISTS users (
@@ -92,11 +91,15 @@ def startup():
           email TEXT UNIQUE NOT NULL,
           name TEXT NOT NULL,
           password_hash TEXT NOT NULL,
-          created_at TIMESTAMPTZ NOT NULL DEFAULT now())""")
+          created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        )""")
+
         c.execute("""CREATE TABLE IF NOT EXISTS balances (
           user_id BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
           amount NUMERIC(12,2) NOT NULL DEFAULT 0,
-          updated_at TIMESTAMPTZ NOT NULL DEFAULT now())""")
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        )""")
+
         c.execute("""CREATE TABLE IF NOT EXISTS transactions (
           id BIGSERIAL PRIMARY KEY,
           user_id BIGINT REFERENCES users(id) ON DELETE CASCADE NOT NULL,
@@ -104,34 +107,37 @@ def startup():
           amount NUMERIC(12,2) NOT NULL CHECK(amount > 0),
           status TEXT NOT NULL DEFAULT 'completed',
           description TEXT,
-          created_at TIMESTAMPTZ NOT NULL DEFAULT now())""")
+          created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        )""")
+
         c.execute("""CREATE TABLE IF NOT EXISTS task_claims (
-                id BIGSERIAL PRIMARY KEY,
-                user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                task_id TEXT NOT NULL,
-                amount NUMERIC(12,2) NOT NULL,
-                created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-                UNIQUE(user_id, task_id)
-            )
+          id BIGSERIAL PRIMARY KEY,
+          user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          task_id TEXT NOT NULL,
+          amount NUMERIC(12,2) NOT NULL,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          UNIQUE(user_id, task_id)
+        )""")
+
+        c.execute("""CREATE TABLE IF NOT EXISTS tasks (
+          id TEXT PRIMARY KEY,
+          title TEXT NOT NULL,
+          description TEXT NOT NULL,
+          amount NUMERIC(12,2) NOT NULL CHECK(amount > 0),
+          active BOOLEAN NOT NULL DEFAULT TRUE,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        )""")
+
+        c.execute("""INSERT INTO tasks
+          (id, title, description, amount)
+          VALUES
+            ('welcome', 'Recompensa de bienvenida',
+             'Completa tu primera actividad.', 1.00),
+            ('daily', 'Recompensa diaria',
+             'Realiza la actividad diaria.', 0.50)
+          ON CONFLICT (id) DO NOTHING
         """)
-        c.commit()
-            CREATE TABLE IF NOT EXISTS tasks (
-                id TEXT PRIMARY KEY,
-                title TEXT NOT NULL,
-                description TEXT NOT NULL,
-                amount NUMERIC(12,2) NOT NULL CHECK(amount > 0),
-                active BOOLEAN NOT NULL DEFAULT TRUE,
-                created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-            )
-        """)
-        c.execute("""INSERT INTO tasks (id, title, description, amount)
-            VALUES
-                ('welcome', 'Recompensa de bienvenida',
-                 'Completa tu primera actividad.', 1.00),
-                ('daily', 'Recompensa diaria',
-                 'Realiza la actividad diaria.', 0.50)
-            ON CONFLICT (id) DO NOTHING
-        """)
+
         c.commit()
 
 @app.get("/")
