@@ -345,7 +345,8 @@ def withdraw(data: WithdrawIn, user=Depends(current_user)):
 
 
 @app.get("/admin/withdrawals")
-def admin_withdrawals(user=Depends(require_admin)):
+def 
+admin_withdrawals(user=Depends(require_admin)):
     with db() as c:
         rows = c.execute("""
             SELECT
