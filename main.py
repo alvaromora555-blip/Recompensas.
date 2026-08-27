@@ -105,8 +105,7 @@ def startup():
           status TEXT NOT NULL DEFAULT 'completed',
           description TEXT,
           created_at TIMESTAMPTZ NOT NULL DEFAULT now())""")
-        c.execute("""
-            CREATE TABLE IF NOT EXISTS task_claims (
+        c.execute("""CREATE TABLE IF NOT EXISTS task_claims (
                 id BIGSERIAL PRIMARY KEY,
                 user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                 task_id TEXT NOT NULL,
@@ -114,27 +113,6 @@ def startup():
                 created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
                 UNIQUE(user_id, task_id)
             )
-        """)
-
-        c.execute("""
-            CREATE TABLE IF NOT EXISTS tasks (
-                id TEXT PRIMARY KEY,
-                title TEXT NOT NULL,
-                description TEXT NOT NULL,
-                amount NUMERIC(12,2) NOT NULL CHECK(amount > 0),
-                active BOOLEAN NOT NULL DEFAULT TRUE,
-                created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-            )
-        """)
-
-        c.execute("""
-            INSERT INTO tasks (id, title, description, amount)
-            VALUES
-                ('welcome', 'Recompensa de bienvenida',
-                 'Completa tu primera actividad.', 1.00),
-                ('daily', 'Recompensa diaria',
-                 'Realiza la actividad diaria.', 0.50)
-            ON CONFLICT (id) DO NOTHING
         """)
         c.commit()
             CREATE TABLE IF NOT EXISTS tasks (
@@ -146,8 +124,7 @@ def startup():
                 created_at TIMESTAMPTZ NOT NULL DEFAULT now()
             )
         """)
-        c.execute("""
-            INSERT INTO tasks (id, title, description, amount)
+        c.execute("""INSERT INTO tasks (id, title, description, amount)
             VALUES
                 ('welcome', 'Recompensa de bienvenida',
                  'Completa tu primera actividad.', 1.00),
