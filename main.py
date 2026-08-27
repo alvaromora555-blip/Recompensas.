@@ -105,7 +105,7 @@ def startup():
           status TEXT NOT NULL DEFAULT 'completed',
           description TEXT,
           created_at TIMESTAMPTZ NOT NULL DEFAULT now())""")
-                c.execute("""
+        c.execute("""
             CREATE TABLE IF NOT EXISTS task_claims (
                 id BIGSERIAL PRIMARY KEY,
                 user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
