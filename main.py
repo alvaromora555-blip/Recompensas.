@@ -143,15 +143,17 @@ def startup():
         """)
       
 admin_email = os.getenv("ADMIN_EMAIL")
+
 if admin_email:
+    with db() as c:
         c.execute(
-                """
-                UPDATE users
-                SET is_admin = TRUE
-                WHERE email = %s
-                """,
-                (admin_email.strip().lower(),)
-            )
+            """
+            UPDATE users
+            SET is_admin = TRUE
+            WHERE email = %s
+            """,
+            (admin_email.strip().lower(),)
+        )
         c.commit()
 
 @app.get("/")
