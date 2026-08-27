@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Recompensa</title>
+
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: Arial, sans-serif;
+    }
+
+    body {
+      background: #f3f4f6;
+      color: #111827;
+      min-height: 100vh;
+    }
+
+    header {
+      background: #111827;
+      color: white;
+      padding: 18px;
+      text-align: center;
+      font-size: 22px;
+      font-weight: bold;
+    }
+
+    .container {
+      max-width: 500px;
+      margin: auto;
+      padding: 20px;
+    }
+
+    .card {
+      background: white;
+      border-radius: 18px;
+      padding: 22px;
+      margin-bottom: 18px;
+      box-shadow: 0 4px 15px rgba(0,0,0,.08);
+    }
+
+    h2 {
+      margin-bottom: 18px;
+    }
+
+    input {
+      width: 100%;
+      padding: 14px;
+      margin-bottom: 12px;
+      border: 1px solid #d1d5db;
+      border-radius: 10px;
+      font-size: 16px;
+    }
+
+    button {
+      width: 100%;
+      padding: 14px;
+      border: 0;
+      border-radius: 10px;
+      background: #2563eb;
+      color: white;
+      font-size: 16px;
+      font-weight: bold;
+      margin-top: 8px;
+      cursor: pointer;
+    }
+
+    button:active {
+      transform: scale(.98);
+    }
+
+    .secondary {
+      background: #374151;
+    }
+
+    .danger {
+      background: #dc2626;
+    }
+
+    .balance {
+      text-align: center;
+      font-size: 42px;
+      font-weight: bold;
+      margin: 15px 0;
+      color: #16a34a;
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    .message {
+      padding: 12px;
+      border-radius: 10px;
+      margin-bottom: 15px;
+      background: #e5e7eb;
+      display: none;
+    }
+
+    .transaction {
+      border-bottom: 1px solid #e5e7eb;
+      padding: 12px 0;
+    }
+
+    .transaction:last-child {
+      border-bottom: 0;
+    }
+
+    .earning {
+      color: #16a34a;
+      font-weight: bold;
+    }
+
+    .withdrawal {
+      color: #dc2626;
+      font-weight: bold;
+    }
+
+    .small {
+      color: #6b7280;
+      font-size: 13px;
+      margin-top: 4px;
+    }
+
+    .link {
+      text-align: center;
+      margin-top: 15px;
+      color: #2563eb;
+      cursor: pointer;
+    }
+  </style>
+</head>
+
+<body>
+
+<header>
+  💰 RECOMPENSA
+</header>
+
+<div class="container">
+
+  <!-- LOGIN -->
+  <div id="loginScreen" class="card">
+    <h2>Iniciar sesión</h2>
+
+    <div id="loginMessage" class="message"></div>
+
+    <input
+      id="loginEmail"
+      type="email"
+      placeholder="Correo electrónico"
+    >
+
+    <input
+      id="loginPassword"
+      type="password"
+      placeholder="Contraseña"
+    >
+
+    <button onclick="login()">
+      Iniciar sesión
+    </button>
+
+    <div class="link" onclick="showRegister()">
+      ¿No tienes cuenta? Regístrate
+    </div>
+  </div>
+
+
+  <!-- REGISTRO -->
+  <div id="registerScreen" class="card hidden">
+    <h2>Crear cuenta</h2>
+
+    <div id="registerMessage" class="message"></div>
+
+    <input
+      id="registerName"
+      type="text"
+      placeholder="Nombre"
+    >
+
+    <input
+      id="registerEmail"
+      type="email"
+      placeholder="Correo electrónico"
+    >
+
+    <input
+      id="registerPassword"
+      type="password"
+      placeholder="Contraseña (mínimo 8 caracteres)"
+    >
+
+    <button onclick="register()">
+      Crear cuenta
+    </button>
+
+    <div class="link" onclick="showLogin()">
+      Ya tengo una cuenta
+    </div>
+  </div>
+
+
+  <!-- PANEL -->
+  <div id="dashboard" class="hidden">
+
+    <div class="card">
+      <h2>Hola, <span id="userName">Usuario</span> 👋</h2>
+
+      <div class="small">
+        Saldo disponible
+      </div>
+
+      <div class="balance">
+        $<span id="balance">0.00</span>
+        <small style="font-size:18px;">MXN</small>
+      </div>
+
+      <button onclick="earnReward()">
+        🎁 Ganar recompensa
+      </button>
+
+      <button class="secondary" onclick="loadBalance()">
+        🔄 Actualizar saldo
+      </button>
+    </div>
+
+
+    <div class="card">
+      <h2>💸 Retirar dinero</h2>
+
+      <input
+        id="withdrawAmount"
+        type="number"
+        min="0.01"
+        step="0.01"
+        placeholder="Cantidad a retirar"
+      >
+
+      <button class="danger" onclick="withdraw()">
+        Solicitar retiro
+      </button>
+    </div>
+
+
+    <div class="card">
+      <h2>📊 Movimientos</h2>
+
+      <div id="transactions">
+        Cargando...
+      </div>
+
+      <button class="secondary" onclick="loadTransactions()">
+        Actualizar historial
+      </button>
+    </div>
+
+
+    <button class="danger" onclick="logout()">
+      Cerrar sesión
+    </button>
+
+  </div>
+
+</div>
+
+
+<script>
+
+const API = "https://recompensa-api.onrender.com";
+
+let token = localStorage.getItem("recompensa_token");
+
+
+function showMessage(id, text) {
+  const element = document.getElementById(id);
+  element.innerText = text;
+  element.style.display = "block";
+}
+
+
+function showLogin() {
+  document.getElementById("loginScreen").classList.remove("hidden");
+  document.getElementById("registerScreen").classList.add("hidden");
+}
+
+
+function showRegister() {
+  document.getElementById("loginScreen").classList.add("hidden");
+  document.getElementById("registerScreen").classList.remove("hidden");
+}
+
+
+async function register() {
+
+  const name = document.getElementById("registerName").value.trim();
+  const email = document.getElementById("registerEmail").value.trim();
+  const password = document.getElementById("registerPassword").value;
+
+  if (!name || !email || !password) {
+    showMessage("registerMessage", "Completa todos los campos.");
+    return;
+  }
+
+  try {
+
+    const response = await fetch(API + "/register", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        name: name,
+        email: email,
+        password: password
+      })
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.detail || "No se pudo crear la cuenta.");
+    }
+
+    showMessage(
+      "registerMessage",
+      "Cuenta creada correctamente. Ahora inicia sesión."
+    );
+
+    setTimeout(showLogin, 1200);
+
+  } catch (error) {
+    showMessage("registerMessage", error.message);
+  }
+}
+
+
+async function login() {
+
+  const email = document.getElementById("loginEmail").value.trim();
+  const password = document.getElementById("loginPassword").value;
+
+  if (!email || !password) {
+    showMessage("loginMessage", "Escribe tu correo y contraseña.");
+    return;
+  }
+
+  try {
+
+    const response = await fetch(API + "/login", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        email: email,
+        password: password
+      })
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.detail || "Correo o contraseña incorrectos.");
+    }
+
+    token = data.token;
+
+    localStorage.setItem(
+      "recompensa_token",
+      token
+    );
+
+    document.getElementById("loginScreen").classList.add("hidden");
+    document.getElementById("registerScreen").classList.add("hidden");
+    document.getElementById("dashboard").classList.remove("hidden");
+
+    await loadUser();
+    await loadBalance();
+    await loadTransactions();
+
+  } catch (error) {
+
+    showMessage(
+      "loginMessage",
+      error.message
+    );
+  }
+}
+
+
+async function loadUser() {
+
+  const response = await fetch(API + "/me", {
+    headers: {
+      "Authorization": "Bearer " + token
+    }
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    logout();
+    return;
+  }
+
+  document.getElementById("userName").innerText =
+    data.user.name || data.user.email;
+}
+
+
+async function loadBalance() {
+
+  try {
+
+    const response = await fetch(API + "/balance", {
+      headers: {
+        "Authorization": "Bearer " + token
+      }
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.detail || "Error al consultar saldo.");
+    }
+
+    document.getElementById("balance").innerText =
+      Number(data.balance).toFixed(2);
+
+  } catch (error) {
+
+    console.log(error);
+  }
+}
+
+
+async function earnReward() {
+
+  try {
+
+    const response = await fetch(API + "/earn/demo", {
+      method: "POST",
+      headers: {
+        "Authorization": "Bearer " + token,
+        "Content-Type": "application/json"
+      }
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.detail || "No se pudo entregar la recompensa.");
+    }
+
+    alert("🎉 ¡Recompensa recibida! +$" + data.added + " MXN");
+
+    await loadBalance();
+    await loadTransactions();
+
+  } catch (error) {
+
+    alert(error.message);
+  }
+}
+
+
+async function withdraw() {
+
+  const amount = Number(
+    document.getElementById("withdrawAmount").value
+  );
+
+  if (!amount || amount <= 0) {
+    alert("Introduce una cantidad válida.");
+    return;
+  }
+
+  if (!confirm(
+    "¿Solicitar retiro de $" +
+    amount.toFixed(2) +
+    " MXN?"
+  )) {
+    return;
+  }
+
+  try {
+
+    const response = await fetch(API + "/withdraw", {
+      method: "POST",
+      headers: {
+        "Authorization": "Bearer " + token,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        amount: amount
+      })
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.detail || "No se pudo solicitar el retiro.");
+    }
+
+    alert("✅ Solicitud de retiro creada.");
+
+    document.getElementById("withdrawAmount").value = "";
+
+    await loadBalance();
+    await loadTransactions();
+
+  } catch (error) {
+
+    alert(error.message);
+  }
+}
+
+
+async function loadTransactions() {
+
+  try {
+
+    const response = await fetch(API + "/transactions", {
+      headers: {
+        "Authorization": "Bearer " + token
+      }
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.detail || "Error al cargar movimientos.");
+    }
+
+    const container =
+      document.getElementById("transactions");
+
+    container.innerHTML = "";
+
+    if (!data.transactions || data.transactions.length === 0) {
+
+      container.innerHTML =
+        "<div class='small'>No hay movimientos todavía.</div>";
+
+      return;
+    }
+
+    data.transactions.forEach(transaction => {
+
+      const div = document.createElement("div");
+
+      div.className = "transaction";
+
+      const signo =
+        transaction.type === "earning"
+        ? "+"
+        : "-";
+
+      const clase =
+        transaction.type === "earning"
+        ? "earning"
+        : "withdrawal";
+
+      div.innerHTML = `
+        <div class="${clase}">
+          ${transaction.type === "earning"
+            ? "🎁 Recompensa"
+            : "💸 Retiro"}
+        </div>
+
+        <div>
+          ${signo}$${Number(transaction.amount).toFixed(2)} MXN
+        </div>
+
+        <div class="small">
+          ${transaction.description || ""}
+        </div>
+
+        <div class="small">
+          Estado: ${transaction.status || ""}
+        </div>
+      `;
+
+      container.appendChild(div);
+    });
+
+  } catch (error) {
+
+    document.getElementById("transactions").innerText =
+      error.message;
+  }
+}
+
+
+function logout() {
+
+  localStorage.removeItem("recompensa_token");
+
+  token = null;
+
+  document.getElementById("dashboard").classList.add("hidden");
+
+  showLogin();
+}
+
+
+if (token) {
+
+  document.getElementById("loginScreen").classList.add("hidden");
+  document.getElementById("dashboard").classList.remove("hidden");
+
+  loadUser();
+  loadBalance();
+  loadTransactions();
+
+}
+
+</script>
+
+</body>
+  </html>
