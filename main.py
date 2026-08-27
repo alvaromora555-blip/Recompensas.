@@ -330,7 +330,7 @@ def withdraw(data: WithdrawIn, user=Depends(current_user)):
         c.commit()
     return {"ok":True, "status":"pending", "amount":amount}
   
-  def require_admin(user=Depends(current_user)):
+def require_admin(user=Depends(current_user)):
     with db() as c:
         admin = c.execute(
             "SELECT is_admin FROM users WHERE id=%s",
