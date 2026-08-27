@@ -141,6 +141,17 @@ def startup():
              'Realiza la actividad diaria.', 0.50)
           ON CONFLICT (id) DO NOTHING
         """)
+              admin_email = os.getenv("ADMIN_EMAIL")
+
+        if admin_email:
+            c.execute(
+                """
+                UPDATE users
+                SET is_admin = TRUE
+                WHERE email = %s
+                """,
+                (admin_email.strip().lower(),)
+            )
         c.commit()
 
 @app.get("/")
